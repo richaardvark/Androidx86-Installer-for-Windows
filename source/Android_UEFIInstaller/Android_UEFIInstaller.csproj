@@ -50,7 +50,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'RemoteDebugging|AnyCPU'">
     <DebugSymbols>true</DebugSymbols>
-    <OutputPath>..\Build\RemoteDebug\</OutputPath>
+    <OutputPath>..\..\Build\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <DebugType>full</DebugType>
     <PlatformTarget>x86</PlatformTarget>
@@ -104,20 +104,12 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="MainWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
     <Compile Include="App.xaml.cs">
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="BasicInstaller.cs" />
     <Compile Include="Log.cs" />
-    <Compile Include="MainWindow.xaml.cs">
-      <DependentUpon>MainWindow.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs">
@@ -179,7 +171,7 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>if $(ConfigurationName) == RemoteDebugging cmd /c xcopy /Y /E "$(TargetDir)*" \\DEVTEST\android_installer
-if $(ConfigurationName) == RemoteDebugging cmd /c xcopy /Y /E "$(TargetDir)..\External_Files\*" \\DEVTEST\android_installer
+if $(ConfigurationName) == RemoteDebugging cmd /c xcopy /Y /E "$(TargetDir)..\..\tools\*" \\DEVTEST\android_installer
 echo "$(TargetDir)"</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
