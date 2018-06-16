@@ -93,11 +93,22 @@
       <DependentUpon>AndroidMaterial.xaml</DependentUpon>
     </Compile>
     <Compile Include="config.cs" />
+    <Compile Include="GlobalExceptionHandler.cs" />
+    <Compile Include="IInstallStep.cs" />
+    <Compile Include="InstallationTask.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="types.cs" />
+    <Compile Include="MachineSpecs.cs" />
     <Compile Include="Privilege\NativeMethods.cs" />
     <Compile Include="Privilege\Privilege.cs" />
     <Compile Include="Privilege\PrivilegeNotHeldException.cs" />
-    <Compile Include="UEFIInstaller.cs" />
+    <Compile Include="BootloaderUEFIInstaller.cs" />
+    <Compile Include="RequirementMan.cs" />
     <Compile Include="UEFIWrapper.cs" />
+    <Compile Include="Utils.cs" />
+    <Compile Include="variants\android_x86\Actions.cs" />
+    <Compile Include="variants\android_x86\AndroidInstaller.cs" />
     <Compile Include="Win32Native.cs" />
     <Compile Include="WindowsSecurity.cs" />
     <Page Include="AndroidMaterial.xaml">
@@ -108,7 +119,6 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="BasicInstaller.cs" />
     <Compile Include="Log.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -168,6 +178,7 @@
   <ItemGroup>
     <Resource Include="images\ic_launch_black_24dp_1x.png" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>if $(ConfigurationName) == RemoteDebugging cmd /c xcopy /Y /E "$(TargetDir)*" \\DEVTEST\android_installer

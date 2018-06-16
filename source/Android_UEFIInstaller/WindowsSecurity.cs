@@ -33,7 +33,7 @@ namespace Android_UEFIInstaller
 			return true;
 		}
 
-		Boolean EnablePrivilege(IntPtr HANDLE,string lpszPrivilege)
+		private Boolean EnablePrivilege(IntPtr HANDLE,string lpszPrivilege)
 		{
 			if (!Win32Native.LookupPrivilegeValue(null,lpszPrivilege,out luid))
 			{

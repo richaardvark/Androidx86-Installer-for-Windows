@@ -25,30 +25,17 @@ namespace Android_UEFIInstaller
     /// </summary>
     public partial class AndroidMaterial : Window
     {
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string libname);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
-        private static extern bool FreeLibrary(IntPtr hModule);
-
-        WindowsSecurity ws = new WindowsSecurity();
-        IntPtr Handle;
+     
         BackgroundWorker InstallationTask;
+        long OSSize = 0;
+        bool Update = false;
 
         public AndroidMaterial()
         {
             InitializeComponent();
             
             Version v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            this.Title += "v" + v.Major.ToString() + "." + v.Minor.ToString();
-#if ALPHA_TRIAL
-            DateTime d = new DateTime(2015, 11, 6);
-            if (d <= DateTime.Today)
-            { 
-                MessageBox.Show("This is an expired alpha testing version\nPlease check for the latest release, Application will exit ");
-                Environment.Exit(0);
-            }
-#endif
+            this.Title += String.Format("v{0}.{1}",v.Major.ToString(), v.Minor.ToString());
             //
             //Update Version
             //
@@ -61,7 +48,7 @@ namespace Android_UEFIInstaller
             //
             //SetupGlobalExceptionHandler
             //
-            SetupGlobalExceptionHandler();
+            GlobalExceptionHandler.SetupExceptionHandler();
             //
             //Log Some Info
             //
@@ -74,375 +61,163 @@ namespace Android_UEFIInstaller
             //
             // Machine Info
             //
-            GetMachineInfo();
+            new MachineSpecs().Get();
+           
             //
             // Check if Requirements satisifed
             //
-            if (!RequirementsCheck())
+            if (!new RequirementsMan().Run())
             {
-                DisableUI();
+                UpdateUI(UI_STATUS.OFF);
                 MessageBox.Show("Not all system requirements are met\nPlease check the installer log");
             }
+           
+            //
+            // Initialize Installation Task
+            //
+            InitInstallationTask();
+           
+            //
+            // Check for previous installation
+            //
+            CheckForAndroidInstallation();
 
             Log.write("==========================================");
         }
 
-        public void SetupGlobalExceptionHandler()
+        
+        
+
+        private void Btn_Install(object sender, RoutedEventArgs e)
         {
-            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(MyHandler);
-            AppDomain.CurrentDomain.ProcessExit += currentDomain_ProcessExit;
-
-        }
-
-        void currentDomain_ProcessExit(object sender, EventArgs e)
-        {
-            FreeLibrary(Handle);
-            Log.save();
-        }
-
-        static void MyHandler(object sender, UnhandledExceptionEventArgs args)
-        {
-            Exception e = (Exception)args.ExceptionObject;
-            Log.write("MyHandler caught : " + e.Message);
-            Log.write(String.Format("Runtime terminating: {0}", args.IsTerminating));
-            Log.save();
-        }
-
-        public static bool IsAdministrator()
-        {
-            return (new WindowsPrincipal(WindowsIdentity.GetCurrent()))
-                    .IsInRole(WindowsBuiltInRole.Administrator);
-        }
-
-        public static bool IsCPU64bit()
-        {
-            //
-            // Machine Info
-            //
-            ManagementObjectSearcher objOSDetails = new ManagementObjectSearcher("SELECT * FROM Win32_Processor");
-            ManagementObjectCollection osDetailsCollection = objOSDetails.Get();
-
-            foreach (ManagementObject mo in osDetailsCollection)
-            {
-                Log.write("CPU Architecture: " + mo["Architecture"].ToString());
-                Log.write("CPU Name: " + mo["Name"].ToString());
-
-                UInt16 Arch = UInt16.Parse(mo["Architecture"].ToString());
-                if (Arch == 9) //x64
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        void GetMachineInfo()
-        {
-            //
-            // SecureBoot Status
-            //
-            RegistryKey Subkey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\SecureBoot\State");
-            if (Subkey != null)
-            {
-                int val = (int)Subkey.GetValue("UEFISecureBootEnabled");
-                if (val == 0)
-                {
-                    Log.write("Secure Boot ... Disabled");
-                }
-                else
-                {
-                    Log.write("Secure Boot ... Enabled");
-                }
-            }
-            else
-            {
-                Log.write("Secure Boot ... Not Supported");
-            }
-
-            //
-            // Machine Info
-            //
-            ManagementObjectSearcher objOSDetails = new ManagementObjectSearcher("SELECT * FROM Win32_ComputerSystem");
-            ManagementObjectCollection osDetailsCollection = objOSDetails.Get();
-
-            foreach (ManagementObject mo in osDetailsCollection)
-            {
-                Log.write("Manufacturer: " + mo["Manufacturer"].ToString());
-                Log.write("Model: " + mo["Model"].ToString());
-            }
-
-            //
-            // Motherboard Model
-            //
-            objOSDetails.Query = new ObjectQuery("SELECT * FROM Win32_BaseBoard");
-            osDetailsCollection = objOSDetails.Get();
-            foreach (ManagementObject mo in osDetailsCollection)
-            {
-                Log.write("Product: " + mo["Product"].ToString());
-            }
-
-            //
-            // BIOS Version
-            //
-            objOSDetails.Query = new ObjectQuery("SELECT * FROM Win32_BIOS");
-            osDetailsCollection = objOSDetails.Get();
-            foreach (ManagementObject mo in osDetailsCollection)
-            {
-                String[] iBIOS = (String[])mo["BIOSVersion"];
-                Log.write("BIOS info:");
-                foreach (String item in iBIOS)
-                {
-                    Log.write(item);
-                }
-            }
-
-            //
-            // Graphics Card type
-            //
-            objOSDetails.Query = new ObjectQuery("SELECT * FROM Win32_VideoController");
-            osDetailsCollection = objOSDetails.Get();
-            Log.write("Available GPU(s):");
-            foreach (ManagementObject mo in osDetailsCollection)
-            {
-                Log.write("GPU: " + mo["Description"].ToString());
-            }
-        }
-        Boolean RequirementsCheck()
-        {
-            /*
-             * App is running as admin
-             * Access to NVRAM Granted
-             * System has UEFI
-             * System is running Windows 8 or higher
-             * System is running on Windows 64-bit 
-             * Target partition has enough space
-             * 
-             */
-            Log.write("=============[REQUIREMENTS CHECK]============");
-            //
-            //Administrator check
-            //
-            if (IsAdministrator())
-                Log.write("Administrator privilege ... ok");
-            else
-            {
-                Log.write("Administrator privilege ... fail");
-                return false;
-            }
-            //
-            // 64-bit check
-            //
-            if (!Environment.Is64BitOperatingSystem)
-            {
-                Log.write("OS Type: 32-bit!");
-            }
-            //
-            // Check if CPU Arch. is 64-bit
-            //
-            if (!IsCPU64bit())
-            {
-                Log.write("CPU Architecture is not supported!");
-                return false;
-            }
-            //
-            // OS Version Check
-            //
-            Log.write("OSVer: " + Environment.OSVersion.ToString());
-            if (System.Environment.OSVersion.Platform == PlatformID.Win32NT)
-            {
-                switch (System.Environment.OSVersion.Version.Major)
-                {
-                    case 6:
-                        if (System.Environment.OSVersion.Version.Minor >= 2)
-                            Log.write("OperatingSystem Version ... ok");
-                        break;
-                    case 10:
-                        Log.write("OperatingSystem Version ... ok");
-                        break;
-                    default:
-                        return false;
-                }
-            }
-            else
-                return false;
-
-            //
-            //Load UEFI Library
-            //
-            Handle = LoadLibrary(@"Win32UEFI.dll");
-            if (Handle == IntPtr.Zero)
-            {
-                int errorCode = Marshal.GetLastWin32Error();
-                Log.write(string.Format("Failed to load library (ErrorCode: {0})", errorCode));
-                return false;
-            }
-
-            //
-            //NVRAM Access
-            //            
-            if (ws.GetAccesstoNVRam())
-                Log.write("Windows Security: Access NVRAM Privilege ... ok");
-            else
-            {
-                Log.write("Windows Security: Access NVRAM Privilege ... Not All Set");
-            }
-
-            //
-            //UEFI Check
-            //
-            if (UEFIWrapper.UEFI_isUEFIAvailable())
-                Log.write("System Firmware: UEFI");
-            else
-            {
-                Log.write("System Firmware: Other");
-                return false;
-            }
-
-            return true;
-        }
-
-        private void Button_Click(object sender, RoutedEventArgs e)
-        {
+            TaskInfo InstallInfo;
             String Path=txtISOPath.Text;
             String Drive=cboDrives.Text.Substring(0, 1);
-            String Size = Convert.ToUInt64((sldrSize.Value * 1024 * 1024 * 1024)/512).ToString();
+            String Size = Utils.GetSizeInBytes(sldrSize.Value);
 
-            if (!File.Exists(Path))
+
+            UpdateUI(UI_STATUS.DISABLE);
+
+            if (Update)
             {
-                MessageBox.Show("Android IMG File is not exist");
-                return;
+                InstallInfo = new TaskInfo
+                {
+                    path = Path,
+                    drive = Drive,
+                    size = Size,
+                    operation = InstallationOperation.SYS_UPDATE
+                };
             }
-            if (Size == "0")
+            else
             {
-                MessageBox.Show("Data Size is not set");
-                return;
+                InstallInfo = new TaskInfo
+                {
+                    path = Path,
+                    drive = Drive,
+                    size = Size,
+                    operation = InstallationOperation.SYS_INSTALL
+                };
             }
 
-            InstallationTask = new BackgroundWorker();
-            InstallationTask.WorkerReportsProgress = false;
-            InstallationTask.DoWork += InstallationTask_DoWork;
-            InstallationTask.ProgressChanged += InstallationTask_ProgressChanged;
-            InstallationTask.RunWorkerCompleted += InstallationTask_RunWorkerCompleted;
-
-            DisableUI();
-            pbarStatus.IsIndeterminate = true;
-
-            String[] InstallInfo = { Path, Drive, Size };
-            InstallationTask.RunWorkerAsync(InstallInfo);
+            InstallationTask.RunWorkerAsync(InstallInfo);            
         }
 
-
-
-        private void Button_Click_1(object sender, RoutedEventArgs e)
+        private void Btn_Uninstall(object sender, RoutedEventArgs e)
         {
             if (MessageBoxResult.No == MessageBox.Show("Are you sure you want to remove android ?", "Android Installer", MessageBoxButton.YesNo, MessageBoxImage.Question))
                 return;
 
-            DisableUI();
-            UEFIInstaller u = new UEFIInstaller();
-            u.Uninstall();
-            MessageBox.Show("Uninstall Done");
-            EnableUI();
+            UpdateUI(UI_STATUS.DISABLE);
+
+            TaskInfo InstallInfo = new TaskInfo
+            {
+                path = null,
+                drive = null,
+                size = null,
+                operation = InstallationOperation.SYS_REMOVE
+            };
+
+            InstallationTask.RunWorkerAsync(InstallInfo);
+            
         }
 
-        private void Button_Click_2(object sender, RoutedEventArgs e)
-        {
-            OpenFileDialog dlg = new OpenFileDialog();
-            dlg.DefaultExt = ".img";
-            dlg.Filter = "Android System Image |*.iso;*.img";
 
-            if (dlg.ShowDialog() == true)
+        private void sldrSize_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (sldrSize.IsLoaded)
             {
-                txtISOPath.Text = dlg.FileName;
-                cmdInstall.IsEnabled = true;
+                CheckUserSettings();
             }
         }
-
+       
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             foreach (String item in Environment.GetLogicalDrives())
             {
-                cboDrives.Items.Add(item);
+                /* Remove trailing slash */
+                cboDrives.Items.Add(item.Substring(0,2));
+                
             }
-
             cboDrives.SelectedIndex = 0;
         }
 
-        void DisableUI()
-        {
-            cmdInstall.IsEnabled = false;
-            cmdRemove.IsEnabled = false;
-            cboDrives.IsEnabled = false;
-            sldrSize.IsEnabled = false;
-            ImgCmdBrowse.IsEnabled = false;
-        }
-
-        void EnableUI()
-        {
-            cmdInstall.IsEnabled = true;
-            cmdRemove.IsEnabled = true;
-            cboDrives.IsEnabled = true;
-            sldrSize.IsEnabled = true;
-            ImgCmdBrowse.IsEnabled = true;
-        }
+        
 
         private void Image_MouseUp(object sender, MouseButtonEventArgs e)
         {
             OpenFileDialog dlg = new OpenFileDialog();
             dlg.DefaultExt = ".img";
-            dlg.Filter = "Android System Image |*.iso;*.img";
+            dlg.Filter = "Android System Image |*.iso;*.img;*.zip";
 
             if (dlg.ShowDialog() == true)
             {
                 txtISOPath.Text = dlg.FileName;
-                cmdInstall.IsEnabled = true;
+                OSSize = new FileInfo(dlg.FileName).Length;
+                UpdateAvailableDiskSpace();
+                CheckUserSettings();
             }
         }
 
         private void cboDrives_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
 
-            long DiskSize = GetTotalFreeSpace(cboDrives.SelectedItem.ToString());
-
-            sldrSize.Maximum = ((DiskSize - config.ANDROID_SYSTEM_SIZE) / 1024 / 1024 / 1024);
-            sldrSize.Value = 0.1 * sldrSize.Maximum;
-            sldrSize.TickFrequency = 0.01 * sldrSize.Maximum;
+            UpdateAvailableDiskSpace();
+            CheckUserSettings();
         }
 
         private void txtlog_TextChanged(object sender, TextChangedEventArgs e)
         {
-
             txtlog.ScrollToEnd();
         }
 
-        private long GetTotalFreeSpace(string driveName)
+
+        #region "InstallationTask"
+        
+        void InitInstallationTask()
         {
-            foreach (DriveInfo drive in DriveInfo.GetDrives())
-            {
-                if (drive.IsReady && drive.Name == driveName)
-                {
-                    return drive.AvailableFreeSpace;
-                }
-            }
-            return -1;
+            InstallationTask = new BackgroundWorker();
+            InstallationTask.WorkerReportsProgress = false;
+            InstallationTask.DoWork += InstallationTask_DoWork;
+            InstallationTask.ProgressChanged += InstallationTask_ProgressChanged;
+            InstallationTask.RunWorkerCompleted += InstallationTask_RunWorkerCompleted;
         }
 
         void InstallationTask_DoWork(object sender, DoWorkEventArgs e)
         {
-            String[] InstallInfo = (String[])e.Argument;
-            String Path = InstallInfo[0];
-            String Drive = InstallInfo[1];
-            String Size = InstallInfo[2];
+            TaskInfo InstallInfo = (TaskInfo)e.Argument;
+            AndroidInstaller installationEngine = new AndroidInstaller(InstallInfo.path, 
+                                                                           InstallInfo.drive, 
+                                                                           InstallInfo.size
+                                                                           );
 
-            UEFIInstaller u = new UEFIInstaller();
 
-            //if (!u.Install(Environment.CurrentDirectory + @"\android-x86-4.4-r2.img", "E", "1000"))
-            if (!u.Install(Path, Drive, Size))
-                MessageBox.Show("Install Failed" + Environment.NewLine + "Please check log at C:\\AndroidInstall_XXX.log");
+            if (!installationEngine.Run(InstallInfo.operation))
+                MessageBox.Show("Operation Failed" + Environment.NewLine + "Please check log at C:\\AndroidInstall_XXX.log");
             else
-                MessageBox.Show("Install Done");
+                MessageBox.Show("Operation Completed successfully");
 
-            MessageBox.Show("Kindly report back the installation status to the developer");
+
+            
         }
 
         void InstallationTask_ProgressChanged(object sender, ProgressChangedEventArgs e)
@@ -452,9 +227,101 @@ namespace Android_UEFIInstaller
 
         void InstallationTask_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
-            pbarStatus.IsIndeterminate = false;
-            EnableUI();
+            UpdateUI(UI_STATUS.ENABLE);
         }
-       
+
+        #endregion
+
+
+
+        void CheckUserSettings()
+        {
+            String Path = txtISOPath.Text;
+            String Drive = cboDrives.SelectedItem.ToString();
+            String Size = Utils.GetSizeInBytes(sldrSize.Value);
+
+            if (!File.Exists(Path))
+            {
+                cmdInstall.IsEnabled = false;
+                return;
+            }
+
+            if (!Update) 
+            {
+                if (Size == "0") //Size shouldn't be Zero for fresh install
+                {
+                    cmdInstall.IsEnabled = false;
+                    return;
+                }
+            }
+
+            if (Utils.IsBitlockerEnabled(Drive))
+            {
+                cmdInstall.IsEnabled = false;
+                return;
+            }
+
+            cmdInstall.IsEnabled = true;
+        }
+
+        void CheckForAndroidInstallation()
+        {
+            if (Utils.SearchForPreviousInstallation("AndroidOS") != "0")
+            {
+                Log.write("Previous Android installation found!");
+                Update = true;
+                cmdInstall.Content = "Update";
+            }
+        }
+
+        void UpdateAvailableDiskSpace()
+        {
+            long DiskSize = Utils.GetTotalFreeSpace(cboDrives.SelectedItem.ToString());
+
+            sldrSize.Maximum = ((DiskSize - OSSize + 524288000) / 1024 / 1024 / 1024);
+            sldrSize.Value = 0.1 * sldrSize.Maximum;
+            sldrSize.TickFrequency = 0.01 * sldrSize.Maximum;
+        }
+
+        void UpdateUI(UI_STATUS status)
+        {
+
+            switch (status)
+            {
+                case UI_STATUS.ENABLE:
+                    cmdInstall.IsEnabled = true;
+                    cmdRemove.IsEnabled = true;
+                    cboDrives.IsEnabled = true;
+                    sldrSize.IsEnabled = true;
+                    ImgCmdBrowse.IsEnabled = true;
+                    pbarStatus.IsIndeterminate = false;
+                    break;
+
+                case UI_STATUS.DISABLE:
+                    pbarStatus.IsIndeterminate = true;
+                    cmdInstall.IsEnabled = false;
+                    cmdRemove.IsEnabled = false;
+                    cboDrives.IsEnabled = false;
+                    sldrSize.IsEnabled = false;
+                    ImgCmdBrowse.IsEnabled = false;
+                    break;
+
+                case UI_STATUS.OFF:
+                    cmdInstall.IsEnabled = false;
+                    cmdRemove.IsEnabled = false;
+                    cboDrives.IsEnabled = false;
+                    sldrSize.IsEnabled = false;
+                    ImgCmdBrowse.IsEnabled = false;
+                    break;
+
+                case UI_STATUS.READY:
+                    //pbarStatus.IsIndeterminate = false;
+                    break;
+                default:
+                    break;
+            }
+        }
+
     }
+  
 }

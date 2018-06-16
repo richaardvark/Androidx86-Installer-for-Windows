@@ -9,7 +9,9 @@ namespace Android_UEFIInstaller
 {
     static class UEFIWrapper
     {
+        static IntPtr libHandle;
 
+        #region "Native Functions"
         [DllImport(@"Win32UEFI.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern bool UEFI_Init();
         [DllImport(@"Win32UEFI.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -26,15 +28,23 @@ namespace Android_UEFIInstaller
         [DllImport(@"Win32UEFI.dll", CallingConvention = CallingConvention.Cdecl)]
         [return: MarshalAs(UnmanagedType.I4)]
         public static extern int UEFI_DeleteBootOptionByDescription([MarshalAsAttribute(UnmanagedType.LPWStr)]String Description);
-        /*
-        [DllImport(@"Win32UEFI.dll")]
-        void UEFI_MakeMediaBootOption(WCHAR* Description, WCHAR* DiskLetter, WCHAR* Path);
-        
-        EFI_BOOT_ORDER* UEFI_GetBootList();
-        BDS_LOAD_OPTION** UEFI_GetBootDevices();
-        int UEFI_GetBootCount();
-        
-        
-        */
+        #endregion
+
+        public static bool LoadUEFILibrary()
+        {
+            libHandle = Win32Native.LoadLibrary(@"Win32UEFI.dll");
+            if (libHandle == IntPtr.Zero)
+            {
+                int errorCode = Marshal.GetLastWin32Error();
+                Log.write(string.Format("Failed to load library (ErrorCode: {0})", errorCode));
+                return false;
+            }
+            return true;
+        }
+
+        public static void FreeUEFILibrary()
+        {
+            Win32Native.FreeLibrary(libHandle);
+        }
     }
 }

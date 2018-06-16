@@ -24,13 +24,15 @@ namespace Android_UEFIInstaller
             _lbuffer += (text + Environment.NewLine);
         }
 
+
         public static void updateStatus(String text)
         {
             Application.Current.Dispatcher.Invoke(() =>
             {
-                _lstatus.Text = text;
+                _lstatus.Text = "Status: " + text;
             }); 
         }
+
 
         public static void save()
         {

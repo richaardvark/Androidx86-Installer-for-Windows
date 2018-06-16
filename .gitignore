@@ -17,6 +17,12 @@
 *.sdf
 *.opensdf
 *.suo
+*.VC.db
 ipch/
 [Bb]uild/
 obj/
+
+#temp
+*.bak
+*.tmp
+*.old
